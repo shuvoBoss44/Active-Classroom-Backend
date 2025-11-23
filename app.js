@@ -55,9 +55,19 @@ app.use("/api/contact", contactRoutes);
 app.get("/health", (req, res) => {
     ResponseHandler.success(res, {}, "Server is healthy");
 });
+
+// Root endpoint to prevent 404s on base URL
+app.get("/", (req, res) => {
+    ResponseHandler.success(res, {}, "Active Classroom Backend API is running");
+});
+
+// Ignore favicon requests
+app.get("/favicon.ico", (req, res) => res.status(204).end());
+
 // 404 handler for undefined routes
 app.use((req, res, next) => {
-    const error = new CustomError("Route not found");
+    console.error(`❌ 404 Error: Route not found - ${req.method} ${req.originalUrl}`);
+    const error = new CustomError(`Route not found: ${req.method} ${req.originalUrl}`);
     error.statusCode = 404;
     next(error);
 });
