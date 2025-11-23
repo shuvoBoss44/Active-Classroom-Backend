@@ -12,7 +12,7 @@ const Enrollment = require('../models/Enrollment');
 // Extract config once for readability and consistency
 const STORE_ID = process.env.SSLCOMMERZ_STORE_ID;
 const STORE_PASSWD = process.env.SSLCOMMERZ_STORE_PASSWORD;
-const IS_LIVE = process.env.NODE_ENV === 'production';
+const IS_LIVE = false;
 
 class SSLCommerzService {
     static async initiatePayment(req, res, next) {
@@ -72,7 +72,7 @@ class SSLCommerzService {
                 value_d: session
             };
 
-            const sslcz = new SSLCommerzPayment(STORE_ID, STORE_PASSWD, IS_LIVE);
+            const sslcz = new SSLCommerzPayment(STORE_ID, STORE_PASSWD, false);
             const response = await sslcz.init(data);
 
             if (response.GatewayPageURL) {
