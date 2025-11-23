@@ -58,14 +58,16 @@ class UserController {
                 }
             ).select('-__v'); // Exclude version key from the result
 
-            // FINAL COOKIE SETUP
+            // Cookie configuration for cross-domain auth
+            const isProduction = process.env.NODE_ENV === 'production';
+
             res.cookie('token', idToken, {
                 httpOnly: true,
-                secure: false, // MUST BE false FOR localhost
-                sameSite: 'lax', // lax works perfectly on localhost
+                secure: isProduction, // true in production, false in development
+                sameSite: isProduction ? 'none' : 'lax', // 'none' required for cross-domain in production
                 maxAge: 60 * 60 * 1000, // 1 hour (matches Firebase token)
                 path: '/',
-                domain: 'localhost', // Critical for localhost
+                ...(isProduction ? {} : { domain: 'localhost' }), // No domain in production for cross-domain
             });
 
             console.log("COOKIE SET SUCCESSFULLY FOR:", user.name);
@@ -79,12 +81,14 @@ class UserController {
     // 2. Logout
     static async logout(req, res, next) {
         try {
+            const isProduction = process.env.NODE_ENV === 'production';
+
             res.clearCookie("token", {
                 httpOnly: true,
-                secure: false,
-                sameSite: 'lax',
+                secure: isProduction,
+                sameSite: isProduction ? 'none' : 'lax',
                 path: '/',
-                domain: 'localhost'
+                ...(isProduction ? {} : { domain: 'localhost' })
             });
             ResponseHandler.success(res, {}, 'Logout successful');
         } catch (error) {
