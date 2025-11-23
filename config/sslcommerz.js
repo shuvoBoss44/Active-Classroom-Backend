@@ -252,8 +252,10 @@ class SSLCommerzService {
     }
 
     // handleIPN remains the same as it returns 200 JSON to the gateway, not a redirect
+    // handleIPN now creates Enrollment and sends Email
     static async handleIPN(req, res, next) {
         try {
+            console.log("🔔 SSLCommerz IPN Hit:", req.body);
             const { tran_id, status, val_id } = req.body;
 
             const transaction = await Transaction.findOne({ tranId: tran_id });
@@ -279,7 +281,54 @@ class SSLCommerzService {
                     if (!isAlreadyEnrolled) {
                         course.studentsEnrolled += 1;
                         user.purchasedCourses.push(course._id);
-                        await Promise.all([course.save(), user.save()]);
+
+                        // Update user profile from IPN data (value_a, etc.)
+                        user.phone = req.body.value_a || user.phone;
+                        user.facebookId = req.body.value_b || user.facebookId;
+                        user.schoolCollege = req.body.value_c || user.schoolCollege;
+                        user.session = req.body.value_d || user.session;
+
+                        // Create Enrollment Record
+                        const enrollment = new Enrollment({
+                            user: user._id,
+                            course: course._id,
+                            phone: req.body.value_a || '01000000000',
+                            facebookId: req.body.value_b || 'N/A',
+                            schoolCollege: req.body.value_c || 'N/A',
+                            session: req.body.value_d || 'N/A',
+                            transactionId: transaction.tranId,
+                            amount: transaction.amount,
+                            enrollmentDate: new Date()
+                        });
+
+                        await Promise.all([course.save(), user.save(), enrollment.save()]);
+
+                        // Send Email
+                        const mailOptions = {
+                            from: process.env.EMAIL_USER,
+                            to: user.email,
+                            subject: `Invoice for ${course.title} Purchase`,
+                            html: `
+                                <h2>Thank You for Your Purchase!</h2>
+                                <p>Dear ${user.name || 'Customer'},</p>
+                                <p>Your purchase of <strong>${course.title}</strong> has been successfully completed.</p>
+                                <h3>Transaction Details:</h3>
+                                <ul>
+                                    <li>Transaction ID: ${transaction.tranId}</li>
+                                    <li>Course: ${course.title}</li>
+                                    <li>Amount: ${transaction.amount} ${transaction.currency}</li>
+                                    <li>Status: ${transaction.status}</li>
+                                </ul>
+                                <p>Thank you for choosing our platform!</p>
+                                <p>Best regards,<br>Active Classroom Team</p>
+                            `
+                        };
+                        try {
+                            await EmailService.sendInvoiceEmail(mailOptions);
+                            console.log("📧 IPN Invoice email sent");
+                        } catch (emailError) {
+                            console.error("⚠️ IPN Email failed:", emailError.message);
+                        }
                     }
                 }
             } else if (status === 'FAILED') {
