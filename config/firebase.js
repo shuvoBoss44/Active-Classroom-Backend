@@ -2,6 +2,24 @@ require('dotenv').config();
 const admin = require('firebase-admin');
 const { getAuth } = require('firebase-admin/auth');
 
+// Validate required Firebase environment variables
+const requiredEnvVars = [
+    'FIREBASE_TYPE',
+    'FIREBASE_PROJECT_ID',
+    'FIREBASE_PRIVATE_KEY_ID',
+    'FIREBASE_PRIVATE_KEY',
+    'FIREBASE_CLIENT_EMAIL',
+    'FIREBASE_CLIENT_ID',
+];
+
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+    console.error('❌ Missing Firebase environment variables:', missingVars.join(', '));
+    console.error('Please set these variables in your environment (Render dashboard for production)');
+    throw new Error(`Missing required Firebase environment variables: ${missingVars.join(', ')}`);
+}
+
 // Initialize Firebase Admin SDK
 const serviceAccount = {
     type: process.env.FIREBASE_TYPE,
@@ -19,6 +37,8 @@ const serviceAccount = {
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
 });
+
+console.log('✅ Firebase Admin initialized successfully');
 
 module.exports = {
     admin,
