@@ -71,7 +71,8 @@ class UserController {
             });
 
             console.log("COOKIE SET SUCCESSFULLY FOR:", user.name);
-            ResponseHandler.created(res, { user }, 'User synced successfully');
+            // Return token in body for header-based auth fallback
+            ResponseHandler.created(res, { user, token: idToken }, 'User synced successfully');
         } catch (error) {
             console.error('Sync Firebase Error:', error);
             next(error);
