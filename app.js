@@ -56,6 +56,22 @@ app.get("/health", (req, res) => {
     ResponseHandler.success(res, {}, "Server is healthy");
 });
 
+// TEST ROUTE: Verify Email Service
+const EmailService = require('./services/emailService');
+app.get("/test-email", async (req, res) => {
+    try {
+        await EmailService.sendInvoiceEmail({
+            from: process.env.EMAIL_USER,
+            to: process.env.EMAIL_USER, // Send to self for testing
+            subject: "Test Email from Active Classroom",
+            html: "<h1>It works!</h1><p>Email service is configured correctly.</p>"
+        });
+        res.json({ success: true, message: "Test email sent successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Root endpoint to prevent 404s on base URL
 app.get("/", (req, res) => {
     ResponseHandler.success(res, {}, "Active Classroom Backend API is running");
