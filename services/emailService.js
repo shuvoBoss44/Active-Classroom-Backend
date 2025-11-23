@@ -14,8 +14,7 @@ class EmailService {
             });
             await transporter.sendMail(mailOptions);
         } catch (error) {
-            console.error("❌ Email Service Error:", error);
-            throw new CustomError(`Failed to send invoice email: ${error.message}`, 500);
+            throw new CustomError('Failed to send invoice email', 500);
         }
     }
 }

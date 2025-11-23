@@ -107,20 +107,27 @@ class SSLCommerzService {
 
     static async handleSuccess(req, res, next) {
         try {
+            console.log("💳 SSLCommerz Success Callback Hit:", req.body); // DEBUG LOG
             const { tran_id, val_id } = req.body;
 
             const transaction = await Transaction.findOne({ tranId: tran_id });
             if (!transaction) {
+                console.error("❌ Transaction not found:", tran_id);
                 return res.redirect(`${process.env.FRONTEND_URL}/payment/failed?tranId=${tran_id}&reason=TransactionNotFound`);
             }
+            console.log("✅ Transaction found:", transaction._id);
+
             if (transaction.status === 'success') {
+                console.log("⚠️ Transaction already successful");
                 return res.redirect(`${process.env.FRONTEND_URL}/payment/success?tranId=${tran_id}`);
             }
 
             const sslcz = new SSLCommerzPayment(STORE_ID, STORE_PASSWD, IS_LIVE);
             const validationResponse = await sslcz.validate({ val_id });
+            console.log("🔍 Validation Response:", validationResponse);
 
             if (validationResponse.status !== 'VALID') {
+                console.error("❌ Validation Failed");
                 transaction.status = 'failed';
                 await transaction.save();
                 return res.redirect(`${process.env.FRONTEND_URL}/payment/failed?tranId=${tran_id}&reason=ValidationFailed`);
@@ -135,10 +142,12 @@ class SSLCommerzService {
             ]);
 
             if (!course || !user) {
+                console.error("❌ Course or User not found. Course:", !!course, "User:", !!user);
                 transaction.status = 'failed';
                 await transaction.save();
                 return res.redirect(`${process.env.FRONTEND_URL}/payment/failed?tranId=${tran_id}&reason=UserOrCourseNotFound`);
             }
+            console.log("✅ Course and User found:", course.title, user.name);
 
             // Enrollment Update
             course.studentsEnrolled += 1;
@@ -150,6 +159,7 @@ class SSLCommerzService {
             user.schoolCollege = req.body.value_c || user.schoolCollege;
             user.session = req.body.value_d || user.session;
 
+            console.log("📝 Creating Enrollment Record...");
             // Create Enrollment Record
             const enrollment = new Enrollment({
                 user: user._id,
@@ -163,7 +173,13 @@ class SSLCommerzService {
                 enrollmentDate: new Date()
             });
 
-            await Promise.all([course.save(), user.save(), transaction.save(), enrollment.save()]);
+            try {
+                await Promise.all([course.save(), user.save(), transaction.save(), enrollment.save()]);
+                console.log("🎉 All records saved successfully!");
+            } catch (saveError) {
+                console.error("❌ Database Save Error:", saveError);
+                throw saveError; // Re-throw to be caught by outer catch
+            }
 
             const mailOptions = {
                 from: process.env.EMAIL_USER,
@@ -185,12 +201,18 @@ class SSLCommerzService {
                 `
             };
 
-            await EmailService.sendInvoiceEmail(mailOptions);
+            try {
+                await EmailService.sendInvoiceEmail(mailOptions);
+                console.log("📧 Invoice email sent");
+            } catch (emailError) {
+                console.error("⚠️ Failed to send email (non-critical):", emailError.message);
+            }
 
             // 🛠️ CRITICAL FIX: Redirect to frontend success page
             return res.redirect(`${process.env.FRONTEND_URL}/payment/success?tranId=${tran_id}`);
 
         } catch (error) {
+            console.error("❌ Handle Success Error:", error);
             next(error);
         }
     }
