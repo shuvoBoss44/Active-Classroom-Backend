@@ -65,9 +65,8 @@ class UserController {
                 httpOnly: true,
                 secure: isProduction, // true in production, false in development
                 sameSite: isProduction ? 'none' : 'lax', // 'none' required for cross-domain in production
-                maxAge: 60 * 60 * 1000, // 1 hour (matches Firebase token)
+                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
                 path: '/',
-                ...(isProduction ? {} : { domain: 'localhost' }), // No domain in production for cross-domain
             });
 
             console.log("COOKIE SET SUCCESSFULLY FOR:", user.name);
@@ -89,7 +88,6 @@ class UserController {
                 secure: isProduction,
                 sameSite: isProduction ? 'none' : 'lax',
                 path: '/',
-                ...(isProduction ? {} : { domain: 'localhost' })
             });
             ResponseHandler.success(res, {}, 'Logout successful');
         } catch (error) {
@@ -185,6 +183,11 @@ class UserController {
             const { userId, role } = req.body;
             if (!['student', 'teacher', 'moderator', 'admin'].includes(role)) {
                 return ResponseHandler.error(res, 'Invalid role', 400);
+            }
+
+            // Prevent creating new admins via API
+            if (role === 'admin') {
+                return ResponseHandler.error(res, 'Admins cannot create other admins', 403);
             }
 
             const user = await User.findOne({ userId });
