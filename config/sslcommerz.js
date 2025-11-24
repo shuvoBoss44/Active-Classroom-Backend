@@ -149,15 +149,31 @@ class SSLCommerzService {
             }
             console.log("✅ Course and User found:", course.title, user.name);
 
-            // Enrollment Update
-            course.studentsEnrolled += 1;
-            user.purchasedCourses.push(course._id);
+            // 🛡️ IMPROVED: Check for existing enrollment with atomic operation
+            const existingEnrollment = await Enrollment.findOne({
+                user: user._id,
+                course: course._id
+            });
+
+            if (existingEnrollment) {
+                console.log("⚠️ User already enrolled. Skipping creation.");
+                // Ensure transaction is marked as success even if enrollment exists
+                transaction.status = 'success';
+                await transaction.save();
+                return res.redirect(`${process.env.FRONTEND_URL}/payment/success?tranId=${tran_id}`);
+            }
 
             // Update user profile with enrollment information
             user.phone = req.body.value_a || user.phone;
             user.facebookId = req.body.value_b || user.facebookId;
             user.schoolCollege = req.body.value_c || user.schoolCollege;
             user.session = req.body.value_d || user.session;
+
+            // Enrollment Update (Idempotent check)
+            if (!user.purchasedCourses.includes(course._id)) {
+                user.purchasedCourses.push(course._id);
+                course.studentsEnrolled += 1;
+            }
 
             console.log("📝 Creating Enrollment Record...");
             // Create Enrollment Record
@@ -173,12 +189,28 @@ class SSLCommerzService {
                 enrollmentDate: new Date()
             });
 
+            // Save enrollment separately to catch duplicate key error specifically
             try {
-                await Promise.all([course.save(), user.save(), transaction.save(), enrollment.save()]);
+                await enrollment.save();
+                console.log("✅ Enrollment created successfully!");
+            } catch (enrollmentError) {
+                // 🛡️ HANDLE RACE CONDITION (Duplicate Key Error E11000)
+                if (enrollmentError.code === 11000) {
+                    console.warn("⚠️ Duplicate enrollment detected (Race Condition). This is expected when IPN and callback fire simultaneously. Continuing...");
+                    // Not an error - enrollment already exists from IPN or concurrent request
+                } else {
+                    console.error("❌ Enrollment Save Error:", enrollmentError);
+                    throw enrollmentError; // Re-throw other errors
+                }
+            }
+
+            // Save other records
+            try {
+                await Promise.all([course.save(), user.save(), transaction.save()]);
                 console.log("🎉 All records saved successfully!");
             } catch (saveError) {
                 console.error("❌ Database Save Error:", saveError);
-                throw saveError; // Re-throw to be caught by outer catch
+                throw saveError;
             }
 
             const mailOptions = {
@@ -276,17 +308,27 @@ class SSLCommerzService {
                 ]);
 
                 if (course && user) {
-                    const isAlreadyEnrolled = user.purchasedCourses.some(id => id.toString() === course._id.toString());
+                    // 🛡️ Check for existing enrollment to prevent duplicates
+                    const existingEnrollment = await Enrollment.findOne({
+                        user: user._id,
+                        course: course._id
+                    });
 
-                    if (!isAlreadyEnrolled) {
-                        course.studentsEnrolled += 1;
-                        user.purchasedCourses.push(course._id);
-
+                    if (existingEnrollment) {
+                        console.log("⚠️ IPN: User already enrolled. Skipping enrollment creation.");
+                        // Continue to send email if not already sent
+                    } else {
                         // Update user profile from IPN data (value_a, etc.)
                         user.phone = req.body.value_a || user.phone;
                         user.facebookId = req.body.value_b || user.facebookId;
                         user.schoolCollege = req.body.value_c || user.schoolCollege;
                         user.session = req.body.value_d || user.session;
+
+                        // Add course to user's purchased courses and increment enrollment count
+                        if (!user.purchasedCourses.some(id => id.toString() === course._id.toString())) {
+                            user.purchasedCourses.push(course._id);
+                            course.studentsEnrolled += 1;
+                        }
 
                         // Create Enrollment Record
                         const enrollment = new Enrollment({
@@ -301,14 +343,25 @@ class SSLCommerzService {
                             enrollmentDate: new Date()
                         });
 
-                        await Promise.all([course.save(), user.save(), enrollment.save()]);
+                        // Save with duplicate key error handling
+                        try {
+                            await Promise.all([course.save(), user.save(), enrollment.save()]);
+                            console.log("✅ IPN: Enrollment created successfully!");
+                        } catch (saveError) {
+                            if (saveError.code === 11000) {
+                                console.warn("⚠️ IPN: Duplicate enrollment (Race Condition). Continuing...");
+                            } else {
+                                throw saveError;
+                            }
+                        }
+                    }
 
-                        // Send Email
-                        const mailOptions = {
-                            from: process.env.EMAIL_USER,
-                            to: user.email,
-                            subject: `Invoice for ${course.title} Purchase`,
-                            html: `
+                    // Send Email (moved outside enrollment check, but inside course/user check)
+                    const mailOptions = {
+                        from: process.env.EMAIL_USER,
+                        to: user.email,
+                        subject: `Invoice for ${course.title} Purchase`,
+                        html: `
                                 <h2>Thank You for Your Purchase!</h2>
                                 <p>Dear ${user.name || 'Customer'},</p>
                                 <p>Your purchase of <strong>${course.title}</strong> has been successfully completed.</p>
@@ -322,13 +375,12 @@ class SSLCommerzService {
                                 <p>Thank you for choosing our platform!</p>
                                 <p>Best regards,<br>Active Classroom Team</p>
                             `
-                        };
-                        try {
-                            await EmailService.sendInvoiceEmail(mailOptions);
-                            console.log("📧 IPN Invoice email sent");
-                        } catch (emailError) {
-                            console.error("⚠️ IPN Email failed:", emailError.message);
-                        }
+                    };
+                    try {
+                        await EmailService.sendInvoiceEmail(mailOptions);
+                        console.log("📧 IPN Invoice email sent");
+                    } catch (emailError) {
+                        console.error("⚠️ IPN Email failed:", emailError.message);
                     }
                 }
             } else if (status === 'FAILED') {
