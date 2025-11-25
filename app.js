@@ -53,12 +53,12 @@ app.use("/api/contact", contactRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-    ResponseHandler.success(res, {}, "Server is healthy");
+    res.json({ message: "Server is healthy" });
 });
 
 // Root endpoint to prevent 404s on base URL
 app.get("/", (req, res) => {
-    ResponseHandler.success(res, {}, "Active Classroom Backend API is running");
+    res.json({ message: "Active Classroom Backend API is running" });
 });
 
 // Ignore favicon requests
